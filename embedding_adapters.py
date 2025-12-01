@@ -4,7 +4,8 @@ import logging
 import traceback
 from typing import List
 import requests
-from langchain_openai import AzureOpenAIEmbeddings, OpenAIEmbeddings
+from langchain_openai import AzureOpenAIEmbeddings
+from openai import OpenAI
 
 def ensure_openai_base_url_has_v1(url: str) -> str:
     """
@@ -31,20 +32,34 @@ class BaseEmbeddingAdapter:
 
 class OpenAIEmbeddingAdapter(BaseEmbeddingAdapter):
     """
-    基于 OpenAIEmbeddings（或兼容接口）的适配器
+    基于新版 openai>=1.0.0 的适配器，兼容 Aliyun DashScope / 官方 OpenAI API
     """
     def __init__(self, api_key: str, base_url: str, model_name: str):
-        self._embedding = OpenAIEmbeddings(
-            openai_api_key=api_key,
-            openai_api_base=ensure_openai_base_url_has_v1(base_url),
-            model=model_name
-        )
+        self.model_name = model_name
+        self.client = OpenAI(api_key=api_key,base_url=ensure_openai_base_url_has_v1(base_url))
+
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        return self._embedding.embed_documents(texts)
+        try:
+            response = self.client.embeddings.create(
+                input=texts,
+                model=self.model_name
+            )
+            return [item.embedding for item in response.data]
+        except Exception as e:
+            logging.error(f"OpenAI embed_documents error: {e}\n{traceback.format_exc()}")
+            return [[]] * len(texts)
 
     def embed_query(self, query: str) -> List[float]:
-        return self._embedding.embed_query(query)
+        try:
+            response = self.client.embeddings.create(
+                input=query,
+                model=self.model_name
+            )
+            return response.data[0].embedding
+        except Exception as e:
+            logging.error(f"OpenAI embed_query error: {e}\n{traceback.format_exc()}")
+            return []
 
 class AzureOpenAIEmbeddingAdapter(BaseEmbeddingAdapter):
     """
